@@ -1,0 +1,872 @@
+---
+title: "Final Coding in R Class"
+author: "Edidiong Idong-Bassey"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+***Github account: https://github.com/EconomistInRealLife***
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(repos = c(CRAN = "https://cran.rstudio.com"))
+```
+
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                     fig.width = 10, fig.height = 6)
+
+required_packages <- c("wooldridge", "dplyr", "tidyr", "tibble", "readr", "magrittr", "ggplot2", "ggpubr", "patchwork", "scales", "corrplot","stats", "broom", "performance", "car", "sandwich", "lmtest", "psych","knitr", "stargazer", "kableExtra"
+)
+
+# Install missing packages
+new_packages <- required_packages[!required_packages %in% installed.packages()[,"Package"]]
+if(length(new_packages)) install.packages(new_packages)
+
+# Load libraries
+library(wooldridge)    # For dataset
+library(dplyr)         # Data manipulation
+library(tidyr)         # Data tidying
+library(tibble)        # Modern data frames
+library(readr)         # Data import/export
+library(magrittr)      # Pipe operators
+
+library(ggplot2)       # Primary visualization
+library(ggpubr)        # Publication-ready plots
+library(patchwork)     # Plot arrangement
+library(scales)        # Axis formatting
+library(corrplot)      # Correlation matrices
+
+library(stats)         # Statistical functions
+library(broom)         # Tidy model outputs
+library(performance)   # Model diagnostics
+library(car)           # Regression diagnostics
+library(sandwich)      # Robust standard errors
+library(lmtest)        # Hypothesis testing
+library(psych)         # Descriptive statistics
+
+library(knitr)         # Report generation
+library(stargazer)     # Regression tables
+library(kableExtra)    # Enhanced table formatting
+
+```
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+# Introduction 
+cat("***Date Source***\n")
+cat("The dataset selected is meap01, which comes from the Michigan Department of Education and it is featured in Wooldridge's (2011) textbook \"Introductory Econometrics: A Modern Approach.\" \n")
+cat("It is an extensive school-level dataset from 2001, that emphasises the Michigan Educational Assessment Program (MEAP) for fourth graders. \n")
+cat("The MEAP was created to assess student achievement in core academic disciplines across Michigan's public schools. \n")
+cat("This dataset is useful for educational policy evaluation and economic research since it includes both performance results and a variety of school-level variables, such as expenditures and socioeconomic indicators. \n")
+cat("While the Wooldridge R package is used to retrieve the data, it is important to note that these are actual administrative records rather than synthetic or simulated observations.\n\n")
+
+cat("Project Description:\n\n",
+    "This project looks at the association between fourth-grade academic achievement and school-level socioeconomic characteristics in Michigan public schools.\n",
+    "Using data from the meap01 dataset, the study investigates how poverty (defined by the percentage of pupils eligible for free lunch) and per-pupil spending affect standardized math test scores.\n",
+    "The study's goal is to determine whether increasing educational spending improves results, particularly in high-poverty areas, and whether those benefits fade over time.\n",
+    "Statistical methods such as linear and logistic regressions, interaction terms, and visualization techniques are used to identify trends, disparities, and policy-relevant insights.\n",
+    "The ultimate goal is to have a better understanding of how resource allocation and poverty interact to influence student accomplishment and advise fair educational funding solutions.\n")
+
+
+```
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+cat("**Title:** The Effects of School Spending on Educational & Economic Outcomes (Quarterly Journal of Economics)\n\n")
+cat("**Citation (APA):** Jackson, C. K., Johnson, R. C., & Persico, C. (2016). The effects of school spending on educational and economic outcomes. *Quarterly Journal of Economics, 131*(1), 157-218. https://doi.org/10.1093/qje/qjv036\n\n")
+cat("**Summary:** This study leverages exogenous variation in school spending from court-mandated school finance reforms to examine causal impacts. Results demonstrate that increased spending leads to significant improvements in test scores, educational attainment, and adult wages, with particularly strong effects in lower-income districts.")
+
+cat("\n--- Midterm Challenges: Were the Goals Achieved? ---\n")
+cat("Data Cleaning & Transformation:\n")
+cat("  - Cleaned relevant variables, changed row, column names as specified in the midterm, created log-transformed spending (lexppp),\n")
+cat("    handled missing values, and merged in district-level data.\n\n")
+
+cat("Visualization Goals:\n")
+cat("  - Used boxplots, scatterplots, correlation matrices, and faceted plots\n")
+cat("    to visualize relationships between poverty, spending, and test performance.\n\n")
+
+cat("Statistical Modeling Goals:\n")
+cat("  - Built linear and logistic regression models, including interaction terms.\n")
+cat("  - Modeled binary outcome (80%+ math proficiency) using logistic regression.\n\n")
+
+cat("Nonlinear Effects:\n")
+cat("  - Quadratic regression of log spending confirmed diminishing returns\n")
+cat("    to educational investment.\n\n")
+
+cat("District-Level Effects:\n")
+cat("  - Analyzed average math scores and poverty effects at the district level\n")
+cat("    to complement school-level findings.\n\n")
+
+cat("--- Next Steps in the Project ---\n")
+cat("• Model Refinement:\n")
+cat("  - Consider hierarchical models or random effects for district-level variation.\n")
+cat("• Causal Inference:\n")
+cat("  - Explore IV or difference-in-differences methods for stronger causal claims.\n")
+cat("• Policy Simulation:\n")
+cat("  - Simulate how targeted spending might affect low- vs. high-poverty schools.\n")
+cat("• Reading Scores:\n")
+cat("  - Apply the same framework to analyze reading performance for comparison.\n")
+
+```
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+
+ls("package:wooldridge")
+data( "meap01")
+df <- meap01
+
+#PART 1: Explore the dataset
+str(meap01)
+summary(meap01)
+
+# Total missing values per column
+colSums(is.na(meap01))
+
+# Total missing values in the entire dataset
+sum(is.na(meap01))
+
+
+# PART 2: How many rows and columns?
+cat("Number of observations:", nrow(meap01), "\n")  
+cat("Number of variables:", ncol(meap01), "\n")     
+
+```
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+# Data cleaning and transformation
+clean_df <- df %>%
+  rename(math_score = math4, reading_score = read4) %>%
+  filter(math_score > 0, reading_score > 0, enroll >= 100) %>%
+  mutate(
+    high_poverty = ifelse(lunch > 50, 1, 0),
+    expenditure_bin = ntile(exppp, 4),
+    math_binary = ifelse(math_score >= 80, 1, 0),
+    read_binary = ifelse(reading_score >= 80, 1, 0)
+  ) %>%
+  select(-c(dcode, bcode, lexpend, lenroll))
+
+# Check structure
+glimpse(clean_df)
+```
+
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+# Summary statistics
+summary_stats <- clean_df %>%
+  select(math_score, reading_score, lunch, enroll, exppp, lexppp) %>%
+  psych::describe(quant = c(.25, .75)) %>%
+  select(-vars, -trimmed, -mad, -range)
+
+print(summary_stats)
+
+# Outlier detection
+outlier_plot <- clean_df %>%
+  select(math_score, reading_score, lunch, exppp) %>%
+  pivot_longer(everything()) %>%
+  ggplot(aes(y = value)) +
+  geom_boxplot(fill = "skyblue") +
+  facet_wrap(~name, scales = "free") +
+  labs(title = "Distribution of Key Variables", 
+       subtitle = "Outlier Detection",
+       y = "Value") +
+  theme_minimal()
+
+# Distribution plots
+dist_plot <- clean_df %>%
+  select(math_score, reading_score, lunch, lexppp) %>%
+  pivot_longer(everything()) %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "steelblue", alpha = 0.7) +
+  geom_density(color = "darkred", linewidth = 1) +
+  facet_wrap(~name, scales = "free") +
+  labs(title = "Distribution of Key Variables", x = "") +
+  theme_minimal()
+
+# Combine plots
+(outlier_plot | dist_plot) + plot_annotation(title = "Initial Data Exploration")
+
+# Summary of Initial Data Analysis:
+# The initial data analysis finds significant patterns in student success 
+# and school resources across Michigan's public schools. Boxplots indicate that, 
+# while variables such as poverty levels (lunch) and test scores (math_score, 
+# reading_score) have a moderate distribution, there are noteworthy outliers, 
+# particularly in schools with exceptionally low performance or unusually high 
+# per-pupil spending. These findings support the decision to use log transformations 
+# and robust regressions in later analyses, and they emphasize the necessity of 
+# testing for interaction effects between poverty and spending. Overall, the data 
+# distributions support the modeling technique and indicate significant variation 
+# in how resources and poverty affect academic achievement.
+
+```
+
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+
+# Fixed plots with proper syntax
+poverty_plot <- ggplot(clean_df, aes(x = lunch, y = math_score)) +
+  geom_point(alpha = 0.5, color = "steelblue") +
+  geom_smooth(method = "loess", color = "firebrick", se = FALSE) +
+  geom_smooth(method = "lm", color = "darkgreen", linetype = "dashed", se = FALSE) +
+  labs(title = "Math Performance vs. Poverty Levels",
+       x = "Percentage Eligible for Free Lunch",
+       y = "Math Proficiency (%)") +
+  theme_minimal()
+
+spending_plot <- ggplot(clean_df, aes(x = exppp, y = math_score)) +
+  geom_point(alpha = 0.5, aes(color = factor(high_poverty))) +
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_x_continuous(labels = scales::dollar) +  # Fixed dollar formatting
+  labs(title = "Math Performance vs. Per-Pupil Spending",
+       x = "Per-Pupil Expenditure (USD)",
+       y = "Math Proficiency (%)",
+       color = "High Poverty") +
+  scale_color_discrete(labels = c("No", "Yes")) +  # Better legend labels
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+interaction_plot <- ggplot(clean_df, aes(x = lexppp, y = math_score)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(aes(group = factor(high_poverty)),  # Fixed parentheses
+              method = "lm", se = FALSE) +
+  facet_wrap(~high_poverty, 
+             labeller = as_labeller(c("0" = "Low Poverty", "1" = "High Poverty"))) +
+  labs(title = "Math Performance vs. Log Spending by Poverty Status",
+       x = "Log(Per-Pupil Expenditure)",
+       y = "Math Proficiency (%)") +
+  theme_minimal()
+
+# Arrange plots with patchwork
+poverty_plot / (spending_plot | interaction_plot)
+
+# Visualization Insights:
+# The visualizations provide vital insights about the relationship between school 
+# poverty, spending, and student math performance. The top plot demonstrates a 
+# clear negative link between the percentage of pupils eligible for free lunch 
+# (a proxy for poverty) and math competency, showing that higher poverty rates 
+# are substantially associated with poorer academic outcomes.
+# 
+# The bottom-left plot shows a weak positive relationship between per-pupil spending 
+# and math achievement. However, clustering of data points and color coding by poverty 
+# level reveal that high-poverty schools consistently cluster at lower proficiency 
+# levels, regardless of spending.
+#
+# The bottom-right faceted plot (using log-transformed spending) shows that in 
+# low-poverty schools, additional spending is more clearly associated with higher 
+# math performance. In contrast, the relationship flattens in high-poverty schools, 
+# suggesting diminishing marginal returns in disadvantaged settings.
+#
+# These findings emphasize the need for poverty-sensitive policies beyond just 
+# increasing funding.
+
+```
+
+
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+# Correlation matrix
+cor_matrix <- clean_df %>%
+  select(math_score, reading_score, lunch, enroll, exppp, lexppp) %>%
+  cor(use = "complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.col = "darkblue", addCoef.col = "black",
+         number.cex = 0.7, 
+         title = "Correlation Matrix of Key Variables")
+
+# Correlation Matrix Insights:
+# The matrix highlights key relationships between core variables in the dataset.
+# Math and reading proficiency are highly correlated (r = 0.84), indicating that 
+# strong performance in one subject often predicts success in the other.
+# 
+# Both scores show a strong negative correlation with the percentage of students 
+# eligible for free lunch (math: r = -0.60; reading: r = -0.61), reaffirming 
+# that higher poverty levels are linked to lower academic achievement.
+# 
+# Per-pupil spending (exppp) and its log form (lexppp) are nearly perfectly 
+# correlated (r = 0.97), suggesting multicollinearity issues if used together 
+# in the same model.
+# 
+# School enrollment is moderately negatively correlated with per-pupil spending, 
+# indicating smaller schools may spend more per student.
+# 
+# These findings validate theoretical expectations and help guide regression 
+# model specifications—especially regarding variable selection and 
+# socioeconomic influences on achievement.
+
+```
+
+***Here I answered my research questions without looking at district level effects.***
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+
+# ---- Run all models ----
+# Model 1: Poverty + Log Spending
+model1 <- lm(math_score ~ lunch + lexppp, data = clean_df)
+
+# Model 2: Poverty + Log Spending + Enrollment
+model2 <- lm(math_score ~ lunch + lexppp + enroll, data = clean_df)
+
+# Model 3: Poverty + Log Spending + Spending Bins
+model3 <- lm(math_score ~ lunch + lexppp + expenditure_bin, data = clean_df)
+
+# Model 4: Diminishing Returns (Quadratic)
+model4 <- lm(math_score ~ lexppp + I(lexppp^2), data = clean_df)
+
+# Model 5: Linear Spending
+model5 <- lm(math_score ~ exppp, data = clean_df)
+
+# Model 6: Log Spending
+model6 <- lm(math_score ~ lexppp, data = clean_df)
+
+# Model 7: Logistic Regression for High Performance
+logit_model <- glm(math_binary ~ lexppp + lunch + enroll,
+                   data = clean_df, family = binomial)
+
+# ---- Display results for all linear models ----
+stargazer(model1, model2, model3, model4, model5, model6,
+          type = "text",
+          title = "Regression Models for Math Proficiency",
+          covariate.labels = c(
+            "Poverty (% free lunch)",
+            "Log Per-Pupil Spending",
+            "Enrollment",
+            "Spending Bin: Q2",
+            "Spending Bin: Q3",
+            "Spending Bin: Q4",
+            "Spending Squared",
+            "Per-Pupil Spending"
+          ),
+          dep.var.labels = "Math Proficiency (%)",
+          column.labels = c("Model 1", "Model 2", "Model 3", "Model 4", "Model 5", "Model 6"),
+          notes = c("Standard errors in parentheses", 
+                    "* p<0.05, ** p<0.01, *** p<0.001"),
+          align = TRUE,
+          omit.stat = c("f", "ser"),
+          no.space = TRUE)
+
+# ---- Display logistic regression results ----
+cat("\n\n--- Logistic Regression for High Math Performance (≥80%) ---\n")
+logit_tidy <- tidy(logit_model, conf.int = TRUE, exponentiate = TRUE)
+logit_tidy %>%
+  mutate(across(where(is.numeric), ~ round(., 3))) %>%
+  select(term, estimate, std.error, p.value, conf.low, conf.high) %>%
+  kable(caption = "Odds Ratios for Achieving High Math Performance") %>%
+  print()
+
+# ---- Model comparisons ----
+cat("\n\n--- Comparison of Spending Specifications ---\n")
+model_comp <- data.frame(
+  Model = c("Model 5: Linear Spending", "Model 6: Log Spending"),
+  R2 = c(summary(model5)$r.squared, summary(model6)$r.squared),
+  Adj_R2 = c(summary(model5)$adj.r.squared, summary(model6)$adj.r.squared),
+  AIC = c(AIC(model5), AIC(model6)),
+  BIC = c(BIC(model5), BIC(model6))
+) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+kable(model_comp, caption = "Model Fit Comparison")
+
+# ---- Model diagnostics ----
+# Model 2 diagnostics
+cat("\n\n--- Diagnostics for Model 2 ---\n")
+# Multicollinearity
+vif_results <- vif(model2)
+cat("\nVariance Inflation Factors (VIF):\n")
+print(vif_results)
+
+# Robust standard errors
+cat("\nRobust Standard Errors (HC1):\n")
+robust_results <- coeftest(model2, vcov = vcovHC(model2, type = "HC1"))
+print(robust_results)
+
+cat("
+### Key Findings from Analysis
+
+1. **Poverty Effect**: Each 10 percentage point increase in free lunch eligibility is associated with a 4.7-point decrease in average math proficiency (β ≈ -0.47, p < 0.001), suggesting a strong negative relationship between poverty and achievement.
+
+2. **Spending Impact**: Models using log-transformed per-pupil spending (e.g., Model 2, R² = 0.379) explain considerably more variance in student performance than models using raw or binned spending levels (e.g., Model 5, R² = 0.001).
+
+3. **Nonlinear Effects**: Squared spending terms in Models 5 and 6 are positive but contribute little to explanatory power, indicating no strong evidence of diminishing or accelerating returns in the quadratic specifications.
+
+4. **Multicollinearity & Robustness**: Variance inflation factors (VIFs) for key predictors (lunch, lexppp, and enrollment) are all below 2, indicating low multicollinearity. Robust standard errors confirm the statistical significance of key predictors in Model 2.
+
+5. **Logistic Regression (If applicable)**: *Logistic models predicting high math performance (≥80%) show that higher poverty levels are significantly associated with lower odds of high proficiency.*
+")
+
+
+```
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+
+# Research Questions and Analysis Plan
+cat("
+# Research Design
+
+## Research Questions
+
+This study examines the relationship between school resources, socioeconomic factors, and academic performance using Michigan's 2001 MEAP data. The following questions 
+guide the investigation:
+
+1. **Poverty and Spending Effects**: Does 4th-grade math performance vary by poverty level,and does per-pupil spending significantly impact test scores?
+   
+2. **Poverty's Persistent Impact**: After controlling for spending levels, why do schools 
+   with higher poverty rates consistently show lower performance?
+   
+3. **Subject-Specific Poverty Gaps**: Do reading and math performance differ between high-poverty and low-poverty schools?
+   
+4. **Demographic Effects**: How do student demographics affect academic performance in schools with similar budget levels?
+   
+5. **Diminishing Returns**: Does increased per-student expenditure show diminishing marginal returns on academic achievement?
+   
+6. **Functional Form**: Is academic performance more strongly associated with 
+   log-transformed spending measures than raw dollar amounts?
+
+## Planned Statistical Analyses
+
+To address these questions, the following analytical approaches will be employed:
+
+### Regression Modeling
+- **Multiple Linear Regression**: Primary analysis for continuous outcomes (math4/read4)
+  - Core model: `math_score ~ poverty + spending + enrollment`
+  - Extended models with interaction terms and polynomial specifications
+- **Logistic Regression**: For binary outcomes (e.g., 80% proficiency threshold)
+  - Model: `I(math_score >= 80) ~ spending + poverty + enrollment`
+
+### Key Specifications
+- **Spending Representation**: 
+  - Linear: Per-pupil expenditure (exppp)
+  - Log-transformed: Lexppp (log per-pupil spending)
+- **Poverty Interactions**: 
+  - High-poverty indicator (lunch > 50%)
+  - Spending × poverty interaction terms
+- **Non-Linear Terms**: 
+  - Quadratic spending term: `I(lexppp^2)`
+  - Spending quartile indicators
+
+### Analytical Techniques
+1. **Visual Analysis**: Scatterplots with smoothing curves, boxplots by poverty status
+2. **Correlation Analysis**: Heatmaps of variable relationships
+3. **Model Comparison**: AIC/BIC for linear vs log spending specifications
+4. **Diagnostic Testing**:
+   - Variance Inflation Factors (VIF) for multicollinearity
+   - Breusch-Pagan test for heteroscedasticity
+   - Robust standard errors (HC1)
+   - Residual analysis for model fit
+
+### Causal Inference Considerations
+- **Limitations**: Acknowledgment of observational data constraints
+- **Robustness Checks**: 
+  - Alternative model specifications
+  - Subgroup analyses by poverty level
+  - District fixed effects (using dcodes)
+")
+```
+# Regression Summary:
+# Poverty shows a strong and consistent negative effect on math scores. 
+# A 10% increase in students eligible for free lunch is linked to a ~4.7 point drop 
+# in math performance. While higher per-pupil spending (especially in log terms) 
+# is associated with improved outcomes, the impact weakens when adjusting 
+# for other variables like school size. 
+# Models using categorical or raw spending measures perform poorly, 
+# reinforcing that poverty is the most reliable and robust predictor of student achievement.
+
+# Logistic Regression Summary:
+# Higher per-pupil spending significantly increases the odds of high math proficiency.
+# A one-unit increase in log spending nearly triples the odds (OR = 2.99, p < 0.001).
+# In contrast, higher poverty (free lunch rate) reduces the odds by ~4% per percentage point (OR = 0.96, p < 0.001).
+# Enrollment has a marginal negative effect (OR = 0.999, p = 0.051).
+# Overall, spending is a strong positive and poverty a strong negative predictor of academic success.
+
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+# Generate regression tables
+stargazer::stargazer(model1, model2, model3, model4,
+                     type = "text",
+                     title = "Regression Results: Math Performance Determinants",
+                     covariate.labels = c("Poverty", "Log Spending", "Enrollment", 
+                                          "Spending Squared", "Spending Bin Q2", 
+                                          "Spending Bin Q3", "Spending Bin Q4"),
+                     dep.var.labels = "Math Proficiency (%)")
+
+# Visualize diminishing returns
+ggplot(clean_df, aes(x = exppp, y = math_score)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), color = "darkred") +
+  scale_x_continuous(labels = dollar) +
+  labs(title = "Diminishing Returns to Educational Spending",
+       subtitle = "Quadratic relationship between spending and math proficiency",
+       x = "Per-Pupil Expenditure (USD)",
+       y = "Math Proficiency (%)") +
+  theme_minimal()
+
+# Poverty-performance gap visualization
+clean_df %>%
+  group_by(high_poverty) %>%
+  summarise(Math = mean(math_score), Reading = mean(reading_score)) %>%
+  pivot_longer(cols = c(Math, Reading)) %>%
+  ggplot(aes(x = factor(high_poverty), y = value, fill = name)) +
+  geom_col(position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Academic Performance Gap by Poverty Status",
+       x = "High Poverty School (>50% free lunch)",
+       y = "Average Proficiency (%)",
+       fill = "Subject") +
+  theme_minimal()
+
+# Diminishing Returns to Spending:
+# The scatterplot shows a clear quadratic relationship between per-pupil spending and math proficiency.
+# Performance rises with spending up to an optimal point, then plateaus or declines.
+# This supports the regression finding: a negative squared term for log spending.
+# Conclusion: More spending alone does not guarantee better outcomes—effective resource use matters more.
+
+# Poverty and Achievement Gap:
+# The bar chart highlights a stark performance gap between low- and high-poverty schools.
+# Students in low-poverty schools score about 21 points higher in math on average.
+# This supports the regression results showing a strong negative link between poverty and academic outcomes.
+# Poverty remains one of the most consistent predictors of lower performance.
+
+
+
+```
+
+***Exploring district level effects using dcode variable***
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+ls("package:wooldridge")
+data( "meap01")
+df <- meap01
+df <- meap01 %>%
+  rename(math_score = math4, 
+         reading_score = read4,
+         district_code = dcode) %>%
+  filter(math_score > 0, reading_score > 0, enroll >= 100) %>%
+  mutate(
+    high_poverty = ifelse(lunch > median(lunch, na.rm = TRUE), 1, 0),
+    spending_quartile = factor(ntile(exppp, 4)),
+    log_spending = log(exppp),
+    log_enroll = log(enroll)
+  )
+
+# Add district-level aggregates
+district_df <- df %>%
+  group_by(district_code) %>%
+  summarise(
+    district_poverty = mean(lunch, na.rm = TRUE),
+    district_math = mean(math_score, na.rm = TRUE),
+    district_read = mean(reading_score, na.rm = TRUE),
+    district_spend = mean(exppp, na.rm = TRUE),
+    n_schools = n()
+  ) %>%
+  filter(n_schools >= 3)  # Only districts with ≥3 schools
+
+
+```
+
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+
+# Merge back to original data
+df <- df %>% left_join(district_df, by = "district_code")
+
+### Research Question 1: Poverty and Spending Effects
+q1_model <- lm(math_score ~ lunch + log_spending, data = df)
+q1_district <- lm(district_math ~ district_poverty + district_spend, data = district_df)
+
+### Research Question 2: Poverty Effect Controlling for Spending
+q2_model <- lm(math_score ~ lunch + log_spending + factor(spending_quartile), data = df)
+
+### Research Question 3: Performance in High vs Low Poverty Schools
+q3_ttest <- t.test(math_score ~ high_poverty, data = df)
+q3_plot <- ggplot(df, aes(x = factor(high_poverty), y = math_score)) +
+  geom_boxplot() +
+  labs(x = "High Poverty School", y = "Math Score") +
+  scale_x_discrete(labels = c("Low", "High"))
+
+### Research Question 4: Demographics Effects Within Spending Groups
+q4_model <- lm(math_score ~ lunch + log_enroll + factor(spending_quartile), data = df)
+
+### Research Question 5: Diminishing Returns to Spending
+q5_model <- lm(math_score ~ log_spending + I(log_spending^2), data = df)
+inflection_point <- -coef(q5_model)[2]/(2*coef(q5_model)[3])
+optimal_spending <- exp(inflection_point)
+
+### Research Question 6: Log vs Linear Spending
+q6_linear <- lm(math_score ~ exppp, data = df)
+q6_log <- lm(math_score ~ log_spending, data = df)
+
+# Model comparison
+model_comp <- data.frame(
+  Model = c("Linear Spending", "Log Spending"),
+  R2 = c(summary(q6_linear)$r.squared, summary(q6_log)$r.squared),
+  AIC = c(AIC(q6_linear), AIC(q6_log)),
+  BIC = c(BIC(q6_linear), BIC(q6_log))
+)
+
+# Regression Model Diagnostics:
+# VIFs in the Q2 model are all below 5, indicating no major multicollinearity concerns.
+# In Q1, robust (HC1) standard errors confirm significant effects of:
+#  - Poverty (β = -0.47, p < 0.001)
+#  - Log Spending (β ≈ 11.35, p < 0.001)
+# These diagnostics enhance confidence in the model's validity and interpretation.
+
+```
+
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+# ===================== DISPLAY REGRESSION RESULTS =====================
+
+# === RESEARCH QUESTION 1 ===
+stargazer(q1_model, q1_district,
+          type = "text",
+          title = "RQ1: Poverty and Spending Effects (School vs District)",
+          column.labels = c("School-Level", "District-Level"),
+          covariate.labels = c("Poverty Rate", "Log Spending", "District Poverty", "District Spending"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# === RESEARCH QUESTION 2 ===
+stargazer(q2_model,
+          type = "text",
+          title = "RQ2: Poverty Effect Controlling for Spending Quartiles",
+          covariate.labels = c("Poverty Rate", "Log Spending", 
+                               "Spending Q2", "Spending Q3", "Spending Q4"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# === RESEARCH QUESTION 4 ===
+stargazer(q4_model,
+          type = "text",
+          title = "RQ4: Demographic Effects Within Spending Groups",
+          covariate.labels = c("Poverty Rate", "Log Enrollment", 
+                               "Spending Q2", "Spending Q3", "Spending Q4"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# === RESEARCH QUESTION 5 ===
+stargazer(q5_model,
+          type = "text",
+          title = "RQ5: Diminishing Returns to Spending",
+          covariate.labels = c("Log Spending", "Log Spending Squared"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# Display Optimal Spending
+inflection_point <- -coef(q5_model)[2] / (2 * coef(q5_model)[3])
+optimal_spending <- exp(inflection_point)
+cat("\nOptimal Spending Point: $", round(optimal_spending, 0), "per pupil\n")
+
+# === RESEARCH QUESTION 6 ===
+stargazer(q6_linear, q6_log,
+          type = "text",
+          title = "RQ6: Log vs Linear Spending Models",
+          column.labels = c("Linear", "Log"),
+          covariate.labels = c("Per-Pupil Spending", "Log Spending"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# === Model Comparison Table ===
+model_comp <- data.frame(
+  Model = c("Linear Spending", "Log Spending"),
+  R2 = c(summary(q6_linear)$r.squared, summary(q6_log)$r.squared),
+  Adj_R2 = c(summary(q6_linear)$adj.r.squared, summary(q6_log)$adj.r.squared),
+  AIC = c(AIC(q6_linear), AIC(q6_log)),
+  BIC = c(BIC(q6_linear), BIC(q6_log))
+)
+cat("\nModel Comparison Table:\n")
+print(model_comp)
+# Research Question 3 Results
+cat("\n\n===================== RESEARCH QUESTION 3 =====================\n")
+print(q3_ttest)
+
+# Visualization for Q3
+q3_plot <- ggplot(df, aes(x = factor(high_poverty), y = math_score)) +
+  geom_boxplot() +
+  labs(x = "High Poverty School", y = "Math Score", 
+       title = "Math Performance by Poverty Status") +
+  scale_x_discrete(labels = c("Low Poverty", "High Poverty"))
+print(q3_plot)
+
+# Visualization for Q5
+cat("\n\nDiminishing Returns Visualization:\n")
+q5_plot <- ggplot(df, aes(x = exppp, y = math_score)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", formula = y ~ poly(log(x), 2), color = "blue") +
+  geom_vline(xintercept = optimal_spending, linetype = "dashed", color = "red") +
+  scale_x_continuous(labels = scales::dollar) +
+  labs(title = "Diminishing Returns to Educational Spending",
+       subtitle = paste("Optimal spending around $", round(optimal_spending, 0)),
+       x = "Per-Pupil Expenditure (USD)",
+       y = "Math Proficiency (%)") +
+  theme_minimal()
+print(q5_plot)
+```
+
+# RQ1: Effects of Poverty on Spending
+# Poverty (measured via free lunch rates) is strongly negatively associated with math performance.
+# Log per-pupil spending is positively associated with scores, but the effect weakens at the district level.
+# Spending improves outcomes to a point, but poverty remains a dominant factor.
+
+# RQ2: Control for Spending Quartiles
+# Even when controlling for spending quartiles, poverty remains a significant negative predictor of math scores.
+# Quartile variables are not consistently significant, suggesting that high spending alone does not ensure better outcomes.
+
+# RQ3: High vs. Low Poverty Schools
+# T-tests and boxplots show high-poverty schools have much lower average math performance.
+# Poverty appears to be a structural barrier to achievement.
+
+# RQ4: Demographics in Spending Groups
+# Controlling for enrollment and spending quartiles, poverty remains a strong negative factor.
+# Larger schools slightly underperform, implying that school size and resource strain affect outcomes.
+
+# RQ5: Diminishing Returns on Spending
+# Math scores increase with spending up to ~$4,440 per student.
+# After that, returns diminish or even reverse, showing that spending efficiency matters more than quantity.
+
+# RQ6: Linear and Log Spending Models
+# Linear and log models of spending have low explanatory power (low R²).
+# Poverty and school conditions explain performance better than spending alone.
+
+***Other regression models***
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+# Table for Q1-Q2 models
+stargazer(q1_model, q1_district, q2_model,
+          title = "Poverty and Spending Effects on Math Scores",
+          column.labels = c("School Level", "District Level", "With Spending Controls"),
+          covariate.labels = c("Poverty Rate", "Log Spending", "Spending Q2", "Spending Q3", "Spending Q4"),
+          dep.var.labels = "Math Proficiency (%)",
+          type = "text")
+
+# Q3 Results
+cat("\nMath Score Difference (High vs Low Poverty):\n")
+print(q3_ttest)
+print(q3_plot)
+
+# Q4 Results
+cat("\nDemographic Effects Within Spending Groups:\n")
+stargazer(q4_model, type = "text")
+
+# Q5 Results
+cat("\n\n--- Diminishing Returns to Spending ---\n")
+cat("Optimal spending point: $", round(optimal_spending, 0), " per pupil\n", sep = "")
+stargazer(q5_model, type = "text")
+
+# Create and display the plot
+diminishing_returns_plot <- ggplot(df, aes(x = exppp, y = math_score)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", formula = y ~ poly(log(x), 2), color = "blue") +
+  geom_vline(xintercept = optimal_spending, linetype = "dashed", color = "red") +
+  scale_x_continuous(labels = scales::dollar) +
+  labs(title = "Diminishing Returns to Educational Spending",
+       subtitle = paste("Optimal spending around $", round(optimal_spending, 0)),
+       x = "Per-Pupil Expenditure (USD)",
+       y = "Math Proficiency (%)") +
+  theme_minimal()
+print(diminishing_returns_plot)
+
+# Q6 Results
+cat("\n\n--- Model Comparison: Linear vs Log Spending ---\n")
+kable(model_comp, digits = 3) %>% print()
+
+# Diagnostic Checks
+cat("\n\n--- Model Diagnostics ---\n")
+cat("VIF for Multicollinearity in Q2 Model:\n")
+print(vif(q2_model))
+
+cat("\nRobust Standard Errors for Q1 Model:\n")
+print(coeftest(q1_model, vcov = vcovHC(q1_model, type = "HC1")))
+
+
+```
+
+
+***Other regression models***
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+# Load library
+library(stargazer)
+
+# ===================== DISPLAY REGRESSION RESULTS =====================
+
+# === RESEARCH QUESTION 1 ===
+stargazer(q1_model, q1_district,
+          type = "text",
+          title = "RQ1: Poverty and Spending Effects (School vs District)",
+          column.labels = c("School-Level", "District-Level"),
+          covariate.labels = c("Poverty Rate", "Log Spending", "District Poverty", "District Spending"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# === RESEARCH QUESTION 2 ===
+stargazer(q2_model,
+          type = "text",
+          title = "RQ2: Poverty Effect Controlling for Spending Quartiles",
+          covariate.labels = c("Poverty Rate", "Log Spending", 
+                               "Spending Q2", "Spending Q3", "Spending Q4"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# === RESEARCH QUESTION 4 ===
+stargazer(q4_model,
+          type = "text",
+          title = "RQ4: Demographic Effects Within Spending Groups",
+          covariate.labels = c("Poverty Rate", "Log Enrollment", 
+                               "Spending Q2", "Spending Q3", "Spending Q4"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# === RESEARCH QUESTION 5 ===
+stargazer(q5_model,
+          type = "text",
+          title = "RQ5: Diminishing Returns to Spending",
+          covariate.labels = c("Log Spending", "Log Spending Squared"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# Display Optimal Spending
+inflection_point <- -coef(q5_model)[2] / (2 * coef(q5_model)[3])
+optimal_spending <- exp(inflection_point)
+cat("\nOptimal Spending Point: $", round(optimal_spending, 0), "per pupil\n")
+
+# === RESEARCH QUESTION 6 ===
+stargazer(q6_linear, q6_log,
+          type = "text",
+          title = "RQ6: Log vs Linear Spending Models",
+          column.labels = c("Linear", "Log"),
+          covariate.labels = c("Per-Pupil Spending", "Log Spending"),
+          dep.var.labels = "Math Proficiency (%)",
+          align = TRUE, digits = 3)
+
+# === Model Comparison Table ===
+model_comp <- data.frame(
+  Model = c("Linear Spending", "Log Spending"),
+  R2 = c(summary(q6_linear)$r.squared, summary(q6_log)$r.squared),
+  Adj_R2 = c(summary(q6_linear)$adj.r.squared, summary(q6_log)$adj.r.squared),
+  AIC = c(AIC(q6_linear), AIC(q6_log)),
+  BIC = c(BIC(q6_linear), BIC(q6_log))
+)
+cat("\nModel Comparison Table:\n")
+print(model_comp)
+
+# === RESEARCH QUESTION 3 ===
+cat("\n\nRQ3: Performance Gap by Poverty Status:\n")
+print(q3_ttest)
+
+# === Q3 Plot ===
+print(q3_plot)
+
+# === Q5 Plot ===
+print(q5_plot)
+
+```
+
+
+
+
+
+
+
+
+
